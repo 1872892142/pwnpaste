@@ -1,4 +1,6 @@
-// Author:  Jonathan Broche and Tom Steele
+/*
+hibp is a wrapper for haveibeenpwned.com.
+*/
 
 package hibp
 
