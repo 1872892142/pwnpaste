@@ -6,9 +6,11 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"os"
+	"sync"
+
 	"github.com/gojhonny/pwnpaste/haveibeenpwnd"
 	"github.com/olekukonko/tablewriter"
-	"os"
 )
 
 type result struct {
@@ -21,6 +23,7 @@ func main() {
 	//arguments: default one email, input file [-i], download pastebin data (if 404, offer cacheview) or links [default]
 
 	inputfilename := flag.String("i", "", "file containing new line delimited email addresses")
+	ccount := flag.Int("c", 10, "maximum number of concurrent requests")
 	//downloaddata := flag.Bool("d", false, "download associated pastes")
 	flag.Parse()
 
@@ -53,15 +56,37 @@ func main() {
 
 	results := []result{}
 
-	for email := range emailAddrs {
-		p, _ := hibp.GetPasteAccount(email)
-		if len(p) > 0 {
-			results = append(results, result{
-				Email:        email,
-				PasteAccount: p,
-			})
-		}
+	// Mutex to protect writing in Goroutines.
+	resultsMutex := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	work := make(chan string, *ccount)
+
+	// Start up *ccount goroutine pool to make requests.
+	for i := 0; i < *ccount; i++ {
+		go func() {
+			for email := range work {
+				p, _ := hibp.GetPasteAccount(email)
+				if len(p) > 0 {
+					resultsMutex.Lock()
+					results = append(results, result{
+						Email:        email,
+						PasteAccount: p,
+					})
+					resultsMutex.Unlock()
+				}
+				wg.Done()
+			}
+		}()
 	}
+
+	// Send each email to the goroutine pool
+	for email := range emailAddrs {
+		wg.Add(1)
+		work <- email
+	}
+	close(work)
+
+	wg.Wait()
 
 	outputTable(results)
 }
